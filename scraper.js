@@ -1,5 +1,7 @@
 const puppeteer = require("puppeteer-extra");
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
+const http = require("http");
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
 
@@ -10,6 +12,9 @@ const BASE_URL =
 const DATA_DIR = path.join(__dirname, "data");
 const LISTINGS_FILE = path.join(DATA_DIR, "listings.json");
 const NEW_LISTINGS_FILE = path.join(DATA_DIR, "new_listings.json");
+
+// n8n webhook URL — set via environment variable or .env file
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || "";
 
 // Adjust this to your local Chrome/Chromium path
 const CHROME_PATH =
@@ -48,6 +53,49 @@ function saveNewListings(newListings) {
 
 async function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function postToWebhook(payload) {
+  if (!N8N_WEBHOOK_URL) {
+    console.log("N8N_WEBHOOK_URL not set, skipping webhook notification.");
+    return;
+  }
+
+  const url = new URL(N8N_WEBHOOK_URL);
+  const transport = url.protocol === "https:" ? https : http;
+  const body = JSON.stringify(payload);
+
+  return new Promise((resolve, reject) => {
+    const req = transport.request(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            console.log("Webhook notification sent successfully.");
+            resolve(data);
+          } else {
+            console.error(`Webhook returned status ${res.statusCode}: ${data}`);
+            reject(new Error(`Webhook status ${res.statusCode}`));
+          }
+        });
+      }
+    );
+    req.on("error", (err) => {
+      console.error(`Webhook request failed: ${err.message}`);
+      reject(err);
+    });
+    req.write(body);
+    req.end();
+  });
 }
 
 async function launchBrowser() {
@@ -345,6 +393,34 @@ async function run() {
     console.log(
       `\nSummary: ${active} active, ${removed} removed, ${newListings.length} new today`
     );
+
+    // Send new listings to n8n webhook
+    if (newListings.length > 0) {
+      try {
+        await postToWebhook({
+          newCount: newListings.length,
+          activeCount: active,
+          removedCount: removed,
+          timestamp: new Date().toISOString(),
+          listings: newListings.map((l) => ({
+            address: l.address,
+            price: l.price,
+            area: l.area,
+            rooms: l.rooms,
+            floor: l.floor,
+            url: l.url,
+            description: l.description || "",
+            agentName: l.agentName || "",
+            agentPhone: l.agentPhone || "",
+            photos: (l.photos || []).slice(0, 3),
+          })),
+        });
+      } catch (err) {
+        console.error("Failed to notify n8n:", err.message);
+      }
+    } else {
+      console.log("\nNo new listings — skipping webhook notification.");
+    }
   } catch (err) {
     console.error("Scraper error:", err.message);
     process.exit(1);

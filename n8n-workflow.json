@@ -1,0 +1,120 @@
+{
+  "name": "Aruodas.lt New Listings to Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aruodas-new-listings",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst listings = input.listings || [];\nconst newCount = input.newCount || 0;\nconst activeCount = input.activeCount || 0;\nconst timestamp = input.timestamp || new Date().toISOString();\nconst date = timestamp.split('T')[0];\n\nif (listings.length === 0) {\n  return [{ json: { skip: true } }];\n}\n\n// Build header\nlet text = `\\u{1F3E0} *${newCount} new apartment(s) found!*\\n`;\ntext += `\\u{1F4C5} ${date} | \\u{1F4CA} ${activeCount} active total\\n`;\ntext += `\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\u{2500}\\n\\n`;\n\nconst messages = [];\n\n// Format each listing (batch into messages of max 5)\nfor (let i = 0; i < listings.length; i++) {\n  const l = listings[i];\n  const price = l.price ? Number(l.price).toLocaleString('lt-LT') : '?';\n  const area = l.area || '?';\n  const rooms = l.rooms || '?';\n  const floor = l.floor || '?';\n\n  let entry = `*${i + 1}. ${l.address}*\\n`;\n  entry += `\\u{1F4B0} ${price} \\u{20AC} | \\u{1F4CF} ${area} m\\u{00B2} | \\u{1F6CF} ${rooms} rooms | \\u{1F3E2} Floor: ${floor}\\n`;\n\n  if (l.description) {\n    const desc = l.description.substring(0, 200);\n    entry += `\\u{1F4DD} ${desc}${l.description.length > 200 ? '...' : ''}\\n`;\n  }\n  if (l.agentName) {\n    entry += `\\u{1F464} ${l.agentName}`;\n    if (l.agentPhone) entry += ` | \\u{1F4DE} ${l.agentPhone}`;\n    entry += '\\n';\n  }\n  entry += `\\u{1F517} [View listing](${l.url})\\n\\n`;\n\n  text += entry;\n\n  // Telegram message limit ~4096 chars. Split at ~3500 to be safe.\n  if (text.length > 3500 || i === listings.length - 1) {\n    messages.push({ json: { text, skip: false } });\n    text = '';\n  }\n}\n\nreturn messages;"
+      },
+      "id": "format-message",
+      "name": "Format Telegram Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "filter-skip",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-empty",
+      "name": "Has Listings?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "telegram-send",
+      "name": "Send Telegram Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [920, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Format Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Telegram Message": {
+      "main": [
+        [
+          {
+            "node": "Has Listings?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Listings?": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1
+}
