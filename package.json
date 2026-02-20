@@ -1,0 +1,21 @@
+{
+  "name": "aruodas-scraper",
+  "version": "1.0.0",
+  "description": "Aruodas.lt apartment scraper with Cloudflare bypass",
+  "main": "scraper.js",
+  "scripts": {
+    "scrape": "node scraper.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:50776/git/Vitalyzter/test-project"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer-core": "^24.37.5",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}
